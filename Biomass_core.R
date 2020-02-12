@@ -998,30 +998,34 @@ MortalityAndGrowth <- compiler::cmpfun(function(sim) {
     set(subCohortData, NULL, "growthcurve", NULL)
     set(subCohortData, NULL, "aNPPAct", pmax(1, subCohortData$aNPPAct - subCohortData$mAge))
 
-    ## generate climate-sensitivity predictions - this will return 100 (%) if LandR.CS is not run
-    predObj <- calculateClimateEffect(gcsModel = sim$gcsModel,
-                                      mcsModel = sim$mcsModel,
-                                      CMI = sim$CMI,
-                                      ATA = sim$ATA,
-                                      cohortData = subCohortData,
-                                      pixelGroupMap = sim$pixelGroupMap,
-                                      CMInormal = sim$CMInormal,
-                                      gmcsPctLimits = P(sim)$gmcsPctLimits)
+    if (P(sim)$growthAndMortalityDrivers == "LandR.CS") {
+      ## generate climate-sensitivity predictions - this will return 100 (%) if LandR.CS is not run
+      predObj <- calculateClimateEffect(gcsModel = sim$gcsModel,
+                                        mcsModel = sim$mcsModel,
+                                        CMI = sim$CMI,
+                                        ATA = sim$ATA,
+                                        cohortData = subCohortData,
+                                        pixelGroupMap = sim$pixelGroupMap,
+                                        CMInormal = sim$CMInormal,
+                                        gmcsPctLimits = P(sim)$gmcsPctLimits)
 
-    #This line will return aNPPAct unchanged unless LandR_BiomassGMCS is also run
-    subCohortData <- subCohortData[predObj, on = c('pixelGroup', 'age', 'speciesCode')]
-    subCohortData[, aNPPAct := pmax(0, asInteger(aNPPAct * growthPred)/100)] #changed from ratio to pct for memory
+      #This line will return aNPPAct unchanged unless LandR_BiomassGMCS is also run
+      subCohortData <- subCohortData[predObj, on = c('pixelGroup', 'age', 'speciesCode')]
+      subCohortData[, aNPPAct := pmax(0, asInteger(aNPPAct * growthPred)/100)] #changed from ratio to pct for memory
+    }
 
     subCohortData <- calculateGrowthMortality(cohortData = subCohortData)
     set(subCohortData, NULL, "mBio", pmax(0, subCohortData$mBio - subCohortData$mAge))
     set(subCohortData, NULL, "mBio", pmin(subCohortData$mBio, subCohortData$aNPPAct))
     set(subCohortData, NULL, "mortality", subCohortData$mBio + subCohortData$mAge)
 
-    ## this line will return mortality unchanged unless LandR_BiomassGMCS is also run
-    subCohortData[, mortality := pmax(0, asInteger(mortality * mortPred)/100)]
+    if (P(sim)$growthAndMortalityDrivers == "LandR.CS") {
+      ## this line will return mortality unchanged unless LandR_BiomassGMCS is also run
+      subCohortData[, mortality := pmax(0, asInteger(mortality * mortPred)/100)]
+    }
+      ## without climate-sensitivity, mortality never exceeds biomass (Ian added this 2019-04-04)
+      subCohortData$mortality <- pmin(subCohortData$mortality, subCohortData$B)
 
-    ## without climate-sensitivity, mortality never exceeds biomass (Ian added this 2019-04-04)
-    subCohortData$mortality <- pmin(subCohortData$mortality, subCohortData$B)
 
     set(subCohortData, NULL, c("mBio", "mAge", "maxANPP", "maxB", "maxB_eco", "bAP", "bPM"), NULL)
     if (P(sim)$calibrate) {
@@ -1166,7 +1170,7 @@ UniversalDispersalSeeding <- compiler::cmpfun(function(sim, tempActivePixel) {
                                         ecoregionGroup = factorValues2(sim$ecoregionMap, getValues(sim$ecoregionMap),
                                                                        att = "ecoregionGroup")[tempActivePixel]),
                              by = "pixelGroup")
-  siteShade <- dplyr::left_join(activePixelGroup, siteShade, by = "pixelGroup") %>% data.table()
+  siteShade <- dplyr::left_join(activePixelGroup, siteShade, by = c("pixelGroup", 'ecoregionGroup')) %>% data.table()
   siteShade[is.na(siteShade), siteShade := 0]
   setkey(siteShade[, k := 1], k)
   # i believe this is the latest version how the landis guys calculate sufficient light
